@@ -19,9 +19,7 @@ class RobotTraversal:
         self.start_pos = self.robot_pos
         self.robot_dir = 'NORTH'
         self.visited = {}
-        self.possible_moves = set()
-        self.persistent_moves = set()
-        self.auto_mode_moves = set()
+        self.scanned_cells = set()
         self.speed = 150
         self.traversal_path = []
         self.current_step = 0
@@ -30,29 +28,12 @@ class RobotTraversal:
         self.is_paused = False
         self.auto_traverse_id = None
         self.in_auto_mode = False
-        self.auto_mode_started = False
-        self.manual_move_mode = False
         self.density = self.default_density
         self.has_maze = False
         self.offset_x = 0
         self.offset_y = 0
         self.create_widgets()
         self.initialize_game()
-        self.create_border_walls()
-
-    def create_border_walls(self):
-        self.walls = {k: v for k, v in self.walls.items() if not self.is_border_wall(k)}
-        for x in range(self.cols):
-            self.walls[((x, -1), (x, 0))] = True
-            self.walls[((x, self.rows-1), (x, self.rows))] = True
-        for y in range(self.rows):
-            self.walls[((-1, y), (0, y))] = True
-            self.walls[((self.cols-1, y), (self.cols, y))] = True
-
-    def is_border_wall(self, wall):
-        (x1, y1), (x2, y2) = wall
-        return (x1 == x2 and (y1 < 0 or y2 < 0 or y1 >= self.rows or y2 >= self.rows)) or \
-               (y1 == y2 and (x1 < 0 or x2 < 0 or x1 >= self.cols or x2 >= self.cols))
 
     def create_widgets(self):
         self.main_frame = tk.Frame(self.root)
@@ -77,14 +58,17 @@ class RobotTraversal:
             ("Вправо", lambda: self.turn_robot("RIGHT")),
             ("Шаг", self.manual_move),
             ("Авто", self.toggle_auto_traverse),
-            ("Пауза", self.toggle_pause),
+            ("Пауза", self.toggle_pause_resume),
             ("Быстрее", self.speed_up),
             ("Медленнее", self.slow_down),
         ]
 
         for i, (text, command) in enumerate(buttons):
-            btn = tk.Button(self.button_panel, text=text, command=command)
+            btn = tk.Button(self.button_panel, text=text, command=command, width=8)
             btn.grid(row=i//2, column=i%2, padx=2, pady=2, sticky="ew")
+
+        self.button_panel.grid_columnconfigure(0, weight=1)
+        self.button_panel.grid_columnconfigure(1, weight=1)
 
         self.settings_panel = tk.Frame(self.right_frame)
         self.settings_panel.pack(fill=tk.X, padx=5, pady=5)
@@ -159,14 +143,53 @@ class RobotTraversal:
             self.cols = new_cols
             self.density = new_density
             
-            row_diff = new_rows - old_rows
-            col_diff = new_cols - old_cols
-            row_shift = row_diff // 2
-            col_shift = col_diff // 2
-            
             rx, ry = self.robot_pos
-            new_rx = rx + col_shift
-            new_ry = ry + row_shift
+            left_cols = rx
+            right_cols = old_cols - rx - 1
+            top_rows = ry
+            bottom_rows = old_rows - ry - 1
+            
+            col_diff = new_cols - old_cols
+            row_diff = new_rows - old_rows
+            
+            if col_diff % 2 == 0:
+                col_shift_left = col_shift_right = col_diff // 2
+            else:
+                if col_diff > 0:
+                    if left_cols <= right_cols:
+                        col_shift_left = col_diff // 2
+                        col_shift_right = col_diff - col_shift_left
+                    else:
+                        col_shift_right = col_diff // 2
+                        col_shift_left = col_diff - col_shift_right
+                else:
+                    if left_cols >= right_cols:
+                        col_shift_left = col_diff // 2
+                        col_shift_right = col_diff - col_shift_left
+                    else:
+                        col_shift_right = col_diff // 2
+                        col_shift_left = col_diff - col_shift_right
+            
+            if row_diff % 2 == 0:
+                row_shift_top = row_shift_bottom = row_diff // 2
+            else:
+                if row_diff > 0:
+                    if top_rows <= bottom_rows:
+                        row_shift_top = row_diff // 2
+                        row_shift_bottom = row_diff - row_shift_top
+                    else:
+                        row_shift_bottom = row_diff // 2
+                        row_shift_top = row_diff - row_shift_bottom
+                else:
+                    if top_rows >= bottom_rows:
+                        row_shift_top = row_diff // 2
+                        row_shift_bottom = row_diff - row_shift_top
+                    else:
+                        row_shift_bottom = row_diff // 2
+                        row_shift_top = row_shift_bottom
+            
+            new_rx = rx + col_shift_left
+            new_ry = ry + row_shift_top
             if new_rx < 0 or new_rx >= self.cols or new_ry < 0 or new_ry >= self.rows:
                 new_rx = self.cols // 2
                 new_ry = self.rows // 2
@@ -175,29 +198,32 @@ class RobotTraversal:
             
             new_walls = {}
             for wall, state in self.walls.items():
-                if self.is_border_wall(wall):
-                    continue
                 (x1, y1), (x2, y2) = wall
-                new_x1 = x1 + col_shift
-                new_y1 = y1 + row_shift
-                new_x2 = x2 + col_shift
-                new_y2 = y2 + row_shift
+                new_x1 = x1 + col_shift_left
+                new_y1 = y1 + row_shift_top
+                new_x2 = x2 + col_shift_left
+                new_y2 = y2 + row_shift_top
                 if (0 <= new_x1 < self.cols and 0 <= new_y1 < self.rows and
                     0 <= new_x2 < self.cols and 0 <= new_y2 < self.rows):
                     new_walls[((new_x1, new_y1), (new_x2, new_y2))] = state
             self.walls = new_walls
-            self.create_border_walls()
             
-            self.visited = {self.robot_pos: 1}
-            self.possible_moves = set()
-            self.persistent_moves = set()
-            self.auto_mode_moves = set()
+            new_visited = {}
+            for pos, count in self.visited.items():
+                x, y = pos
+                new_x = x + col_shift_left
+                new_y = y + row_shift_top
+                if 0 <= new_x < self.cols and 0 <= new_y < self.rows:
+                    new_visited[(new_x, new_y)] = count
+            if (new_rx, new_ry) not in new_visited:
+                new_visited[(new_rx, new_ry)] = 1
+            self.visited = new_visited
+
             self.steps_count = 0
             self.turns_count = 0
-            self.has_maze = True if new_walls else False
-            self.auto_mode_started = False
+            self.has_maze = False
             self.update_status()
-            self.update_possible_moves()
+            self.scan_environment()
             self.draw_field()
             
         except ValueError:
@@ -211,18 +237,8 @@ class RobotTraversal:
 
     def initialize_game(self):
         self.visited[self.robot_pos] = 1
-        self.update_possible_moves()
+        self.scan_environment()
         self.draw_field()
-
-    def get_exits_count(self, x, y):
-        exits = 0
-        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-            nx, ny = x + dx, y + dy
-            if 0 <= nx < self.cols and 0 <= ny < self.rows:
-                wall_key = ((x, y), (nx, ny)) if (x, y) < (nx, ny) else ((nx, ny), (x, y))
-                if not self.walls.get(wall_key, False):
-                    exits += 1
-        return exits
 
     def draw_field(self):
         self.canvas.delete("all")
@@ -240,13 +256,13 @@ class RobotTraversal:
                 
                 if (x, y) == self.robot_pos:
                     base_color = "blue"
-                elif self.auto_mode_started and visit_count > 0:
+                elif (x, y) in self.scanned_cells and visit_count == 0:
+                    base_color = "yellow"
+                elif visit_count > 0:
                     base_color = "#00FF00" if visit_count == 1 else \
                                 "#FFA500" if visit_count == 2 else \
                                 "#800080" if visit_count == 3 else \
-                                "#FF0000"
-                elif (x, y) in self.persistent_moves:
-                    base_color = "yellow"
+                                "#FF0000" if visit_count >= 4 else "#FFFFFF"
                 else:
                     base_color = "white"
                     
@@ -256,7 +272,7 @@ class RobotTraversal:
                     fill=base_color, outline="gray"
                 )
                 
-                if self.auto_mode_started and visit_count > 0:
+                if visit_count > 0 and (x, y) != self.robot_pos:
                     self.canvas.create_text(
                         self.offset_x + x * self.cell_size + self.cell_size//2,
                         self.offset_y + y * self.cell_size + self.cell_size//2,
@@ -266,14 +282,14 @@ class RobotTraversal:
         
         for (x1, y1), (x2, y2) in self.walls:
             if self.walls[((x1, y1), (x2, y2))]:
-                if x1 == x2:
+                if x1 == x2 and 0 <= y1 < self.rows and 0 <= y2 <= self.rows:
                     y = max(y1, y2)
                     self.canvas.create_line(
                         self.offset_x + x1 * self.cell_size, self.offset_y + y * self.cell_size,
                         self.offset_x + (x1 + 1) * self.cell_size, self.offset_y + y * self.cell_size,
                         width=3, fill="black"
                     )
-                else:
+                elif y1 == y2 and 0 <= x1 < self.cols and 0 <= x2 <= self.cols:
                     x = max(x1, x2)
                     self.canvas.create_line(
                         self.offset_x + x * self.cell_size, self.offset_y + y1 * self.cell_size,
@@ -319,33 +335,22 @@ class RobotTraversal:
             outline="black"
         )
 
-    def update_possible_moves(self):
-        x, y = self.robot_pos
-        new_moves = set()
-        
-        for dx, dy, direction in [(-1, 0, 'WEST'), (1, 0, 'EAST'), (0, -1, 'NORTH'), (0, 1, 'SOUTH')]:
-            nx, ny = x + dx, y + dy
-            wall_key = ((x, y), (nx, ny)) if (x, y) < (nx, ny) else ((nx, ny), (x, y))
-            
-            if (0 <= nx < self.cols and 0 <= ny < self.rows and 
-                not self.walls.get(wall_key, False)):
-                new_moves.add((nx, ny))
-        
-        self.possible_moves = new_moves
-        self.persistent_moves.update(new_moves)
-        
-        if self.auto_mode_started:
-            self.persistent_moves = {pos for pos in self.persistent_moves if self.visited.get(pos, 0) == 0}
-        
-        unvisited_yellow = len(self.persistent_moves)
-        self.paths_label.config(text=f"Пути: {unvisited_yellow}")
+    def scan_environment(self):
+        self.scanned_cells.clear()
+        for pos in self.visited:
+            x, y = pos
+            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < self.cols and 0 <= ny < self.rows and (nx, ny) not in self.visited:
+                    wall_key = ((x, y), (nx, ny)) if (x, y) < (nx, ny) else ((nx, ny), (x, y))
+                    if not self.walls.get(wall_key, False):
+                        self.scanned_cells.add((nx, ny))
 
     def update_status(self):
         self.steps_label.config(text=f"Шаги: {self.steps_count}")
         self.turns_label.config(text=f"Повороты: {self.turns_count}")
         self.speed_label.config(text=f"Скорость: {self.speed}")
-        unvisited_yellow = len(self.persistent_moves)
-        self.paths_label.config(text=f"Пути: {unvisited_yellow}")
+        self.paths_label.config(text=f"Пути: {len(self.scanned_cells)}")
 
     def generate_maze(self):
         self.clear_field()
@@ -359,24 +364,19 @@ class RobotTraversal:
         generator = MazeGenerator(self.rows, self.cols, density)
         generator.generate_maze_kruskal()
         self.walls = generator.get_walls()
-        self.create_border_walls()
         self.has_maze = True
-        self.update_possible_moves()
+        self.scan_environment()
         self.draw_field()
 
     def clear_field(self):
         self.walls = {}
-        self.create_border_walls()
         self.visited = {self.robot_pos: 1}
-        self.possible_moves = set()
-        self.persistent_moves = set()
-        self.auto_mode_moves = set()
+        self.scanned_cells = set()
         self.steps_count = 0
         self.turns_count = 0
         self.has_maze = False
-        self.auto_mode_started = False
         self.update_status()
-        self.update_possible_moves()
+        self.scan_environment()
         self.draw_field()
 
     def reset_field(self):
@@ -392,9 +392,8 @@ class RobotTraversal:
         self.current_step = 0
         self.is_paused = False
         self.in_auto_mode = False
-        self.auto_mode_started = False
         self.update_status()
-        self.update_possible_moves()
+        self.scan_environment()
         self.draw_field()
 
     def toggle_wall(self, event):
@@ -416,7 +415,7 @@ class RobotTraversal:
             return
         
         self.walls[wall_key] = not self.walls.get(wall_key, False)
-        self.update_possible_moves()
+        self.scan_environment()
         self.draw_field()
 
     def move_robot_to_cell(self, event):
@@ -426,13 +425,10 @@ class RobotTraversal:
         if 0 <= x < self.cols and 0 <= y < self.rows:
             path = self.find_path(self.robot_pos, (x, y))
             if path:
-                self.manual_move_mode = True
                 self.robot_pos = (x, y)
                 self.visited[(x, y)] = self.visited.get((x, y), 0) + 1
-                self.steps_count += len(path) - 1
-                self.update_possible_moves()
+                self.scan_environment()
                 self.draw_field()
-                self.manual_move_mode = False
             else:
                 messagebox.showinfo("Ошибка", "Невозможно переместить робота - путь заблокирован стенами")
 
@@ -467,7 +463,7 @@ class RobotTraversal:
         self.robot_dir = directions[self.robot_dir][direction]
         self.turns_count += 1
         self.update_status()
-        self.update_possible_moves()
+        self.scan_environment()
         self.draw_field()
 
     def manual_move(self):
@@ -488,7 +484,7 @@ class RobotTraversal:
             self.robot_pos = (new_x, new_y)
             self.visited[(new_x, new_y)] = self.visited.get((new_x, new_y), 0) + 1
             self.steps_count += 1
-            self.update_possible_moves()
+            self.scan_environment()
         else:
             messagebox.showinfo("Препятствие", "Невозможно двигаться вперёд. Обнаружена стена.")
 
@@ -496,7 +492,7 @@ class RobotTraversal:
         self.draw_field()
 
     def toggle_auto_traverse(self):
-        if not self.in_auto_mode:
+        if not self.traversal_path:
             self.start_auto_traverse()
         elif self.is_paused:
             self.resume_auto_traverse()
@@ -505,44 +501,58 @@ class RobotTraversal:
 
     def start_auto_traverse(self):
         self.in_auto_mode = True
-        self.auto_mode_started = True
         self.traversal_path = []
         self.current_step = 0
         self.is_paused = False
         self.auto_traverse_step()
 
     def auto_traverse_step(self):
-        if not self.in_auto_mode:
+        if not self.scanned_cells:
+            self.in_auto_mode = False
+            messagebox.showinfo("Завершено", "Путешествие завершено.")
             return
 
         if self.is_paused:
             return
 
-        solver = MazeSolver(self.walls, self.rows, self.cols, self.robot_pos, self.robot_dir, self.visited, self.start_pos)
-        next_step = solver.get_next_step()
-        
-        if not next_step:
-            self.in_auto_mode = False
-            messagebox.showinfo("Завершено", "Путешествие завершено.")
-            return
-        
-        x, y, direction = next_step
+        if self.current_step >= len(self.traversal_path):
+            solver = MazeSolver(self.walls, self.rows, self.cols, self.robot_pos, self.robot_dir, self.visited, self.start_pos)
+            solver.scanned_cells = self.scanned_cells.copy()
+            path = []
+            step = solver.get_next_step()
+            while step and solver.scanned_cells:
+                path.append(step)
+                step = solver.get_next_step()
+            self.traversal_path = path
+            self.current_step = 0
+            if not self.traversal_path:
+                self.in_auto_mode = False
+                messagebox.showinfo("Завершено", "Путешествие завершено.")
+                return
+
+        x, y, direction = self.traversal_path[self.current_step]
         
         if direction != self.robot_dir:
             self.robot_dir = direction
             self.turns_count += 1
-        else:
+            self.update_status()
+            self.draw_field()
+            self.current_step += 1
+            self.auto_traverse_id = self.root.after(self.speed, self.auto_traverse_step)
+            return
+        
+        if (x, y) != self.robot_pos:
             self.robot_pos = (x, y)
             self.visited[(x, y)] = self.visited.get((x, y), 0) + 1
             self.steps_count += 1
-            self.auto_mode_moves.add((x, y))
+            self.scan_environment()
         
         self.update_status()
-        self.update_possible_moves()
         self.draw_field()
+        self.current_step += 1
         self.auto_traverse_id = self.root.after(self.speed, self.auto_traverse_step)
 
-    def toggle_pause(self):
+    def toggle_pause_resume(self):
         if self.is_paused:
             self.resume_auto_traverse()
         else:
@@ -555,7 +565,7 @@ class RobotTraversal:
             self.auto_traverse_id = None
 
     def resume_auto_traverse(self):
-        if self.is_paused:
+        if self.is_paused and self.traversal_path:
             self.is_paused = False
             self.auto_traverse_step()
 
@@ -583,7 +593,6 @@ class RobotTraversal:
                 "visited": list(self.visited.items()),
                 "steps": self.steps_count,
                 "turns": self.turns_count,
-                "persistent_moves": list(self.persistent_moves),
                 "density": self.density
             }
             with open(filename, "w") as f:
@@ -605,7 +614,6 @@ class RobotTraversal:
                 self.visited = dict(tuple(item) for item in data.get("visited", []))
                 self.steps_count = data.get("steps", 0)
                 self.turns_count = data.get("turns", 0)
-                self.persistent_moves = set(tuple(item) for item in data.get("persistent_moves", []))
                 self.density = data.get("density", self.default_density)
                 
                 self.rows_entry.delete(0, tk.END)
@@ -616,9 +624,8 @@ class RobotTraversal:
                 self.density_entry.insert(0, str(self.density))
                 
                 self.has_maze = True
-                self.auto_mode_started = False
-                self.update_possible_moves()
                 self.update_status()
+                self.scan_environment()
                 self.draw_field()
 
 if __name__ == "__main__":

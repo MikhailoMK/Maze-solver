@@ -1,4 +1,3 @@
-import random
 from collections import deque
 import heapq
 
@@ -13,19 +12,23 @@ class MazeSolver:
         self.start_pos = start_pos_original
         self.directions = ['NORTH', 'EAST', 'SOUTH', 'WEST']
         self.known_walls = {}
-        self.dead_ends = set()
-        self.path_history = []
-        self.update_known_walls(start_pos)
+        self.pending_turns = []
+        self.scanned_cells = set()
+        self.path = []
+        self.path_index = 0
+        self.scan_environment(start_pos)
 
-    def update_known_walls(self, pos):
+    def scan_environment(self, pos):
         x, y = pos
-        for dx, dy, direction in [(-1, 0, 'WEST'), (1, 0, 'EAST'), (0, -1, 'NORTH'), (0, 1, 'SOUTH')]:
+        for dx, dy, _ in [(-1, 0, 'WEST'), (1, 0, 'EAST'), (0, -1, 'NORTH'), (0, 1, 'SOUTH')]:
             nx, ny = x + dx, y + dy
             wall_key = ((x, y), (nx, ny)) if (x, y) < (nx, ny) else ((nx, ny), (x, y))
             if nx < 0 or nx >= self.cols or ny < 0 or ny >= self.rows:
                 self.known_walls[wall_key] = True
             else:
                 self.known_walls[wall_key] = self.walls.get(wall_key, False)
+                if not self.known_walls[wall_key] and (nx, ny) not in self.visited:
+                    self.scanned_cells.add((nx, ny))
 
     def get_wall_count(self, x, y):
         wall_count = 0
@@ -34,241 +37,161 @@ class MazeSolver:
             wall_key = ((x, y), (nx, ny)) if (x, y) < (nx, ny) else ((nx, ny), (x, y))
             if nx < 0 or nx >= self.cols or ny < 0 or ny >= self.rows:
                 wall_count += 1
-            elif wall_key in self.known_walls and self.known_walls[wall_key]:
+            elif self.known_walls.get(wall_key, False):
                 wall_count += 1
         return wall_count
 
-    def get_next_step(self):
-        x, y = self.current_pos
-        self.update_known_walls((x, y))
+    def can_visit(self, x, y):
+        visits = self.visited.get((x, y), 0)
+        max_visits = min(4, 4 - self.get_wall_count(x, y))
+        return visits < max_visits
 
-        neighbors = []
-        unvisited_neighbors = []
-        for dx, dy, direction in [(-1, 0, 'WEST'), (1, 0, 'EAST'), (0, -1, 'NORTH'), (0, 1, 'SOUTH')]:
-            nx, ny = x + dx, y + dy
-            if nx < 0 or nx >= self.cols or ny < 0 or ny >= self.rows:
-                continue
-            wall_key = ((x, y), (nx, ny)) if (x, y) < (nx, ny) else ((nx, ny), (x, y))
-            if self.known_walls.get(wall_key, False):
-                continue
-            neighbors.append((nx, ny, direction))
-            visits = self.visited.get((nx, ny), 0)
-            max_visits = 4 - self.get_wall_count(nx, ny)
-            if visits == 0 and visits < max_visits and (nx, ny) not in self.dead_ends:
-                unvisited_neighbors.append((nx, ny, direction))
+    def initialize_path(self):
+        self.path = []
+        self.pending_turns = []
+        self.path_index = 0
+        visited = set(self.visited.keys())
+        current_x, current_y = self.current_pos
+        current_dir = self.current_dir
 
-        if unvisited_neighbors:
-            nx, ny, direction = random.choice(unvisited_neighbors)
-            self.path_history.append(self.current_pos)
-            self.current_pos = (nx, ny)
-            self.current_dir = direction
-            return (nx, ny, direction)
+        target = self.find_nearest_unvisited(current_x, current_y, visited)
+        if not target:
+            return
 
-        all_neighbors_full = True
-        for nx, ny, _ in neighbors:
-            visits = self.visited.get((nx, ny), 0)
-            max_visits = 4 - self.get_wall_count(nx, ny)
-            if visits < max_visits and (nx, ny) not in self.dead_ends:
-                all_neighbors_full = False
-                break
+        move_path = self.a_star((current_x, current_y), target, visited)
+        if not move_path:
+            return
 
-        if all_neighbors_full and neighbors and (x, y) != self.start_pos:
-            self.dead_ends.add((x, y))
+        for step in move_path:
+            step_x, step_y = step
+            if step_x > current_x:
+                step_dir = 'EAST'
+            elif step_x < current_x:
+                step_dir = 'WEST'
+            elif step_y > current_y:
+                step_dir = 'SOUTH'
+            else:
+                step_dir = 'NORTH'
 
-        if not unvisited_neighbors and neighbors:
-            target = self.find_nearest_unvisited()
-            if target:
-                path = self.astar_path(target)
-                if path:
-                    nx, ny = path[0]
-                    if nx > x:
-                        direction = 'EAST'
-                    elif nx < x:
-                        direction = 'WEST'
-                    elif ny > y:
-                        direction = 'SOUTH'
-                    else:
-                        direction = 'NORTH'
-                    self.path_history.append(self.current_pos)
-                    self.current_pos = (nx, ny)
-                    self.current_dir = direction
-                    return (nx, ny, direction)
-                else:
-                    seen = set()
-                    queue = deque([((x, y), [])])
-                    while queue:
-                        (cx, cy), path = queue.popleft()
-                        if (cx, cy) in seen:
-                            continue
-                        seen.add((cx, cy))
-                        self.dead_ends.add((cx, cy))
-                        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                            nx, ny = cx + dx, cy + dy
-                            if nx < 0 or nx >= self.cols or ny < 0 or ny >= self.rows:
-                                continue
-                            wall_key = ((cx, cy), (nx, ny)) if (cx, cy) < (nx, ny) else ((nx, ny), (cx, cy))
-                            if self.known_walls.get(wall_key, False):
-                                continue
-                            visits = self.visited.get((nx, ny), 0)
-                            max_visits = 4 - self.get_wall_count(nx, ny)
-                            if visits == 0 and visits < max_visits:
-                                path_to_unvisited = self.astar_path((nx, ny))
-                                if path_to_unvisited:
-                                    nx, ny = path_to_unvisited[0]
-                                    if nx > x:
-                                        direction = 'EAST'
-                                    elif nx < x:
-                                        direction = 'WEST'
-                                    elif ny > y:
-                                        direction = 'SOUTH'
-                                    else:
-                                        direction = 'NORTH'
-                                    self.path_history.append(self.current_pos)
-                                    self.current_pos = (nx, ny)
-                                    self.current_dir = direction
-                                    return (nx, ny, direction)
-                            queue.append(((nx, ny), path + [(nx, ny)]))
-                    while self.path_history:
-                        prev_pos = self.path_history.pop()
-                        path = self.astar_path(prev_pos)
-                        if path:
-                            nx, ny = path[0]
-                            if nx > x:
-                                direction = 'EAST'
-                            elif nx < x:
-                                direction = 'WEST'
-                            elif ny > y:
-                                direction = 'SOUTH'
-                            else:
-                                direction = 'NORTH'
-                            self.current_pos = (nx, ny)
-                            self.current_dir = direction
-                            return (nx, ny, direction)
-                    return None
+            if step_dir != current_dir:
+                turns = self.get_required_turns(current_dir, step_dir)
+                for turn in turns:
+                    self.path.append((current_x, current_y, turn))
+                    current_dir = turn
 
-        if self.all_cells_visited():
-            path = self.astar_path(self.start_pos)
-            if path:
-                nx, ny = path[0]
-                if nx > x:
-                    direction = 'EAST'
-                elif nx < x:
-                    direction = 'WEST'
-                elif ny > y:
-                    direction = 'SOUTH'
-                else:
-                    direction = 'NORTH'
-                self.current_pos = (nx, ny)
-                self.current_dir = direction
-                return (nx, ny, direction)
+            if (step_x, step_y) != (current_x, current_y):
+                self.path.append((step_x, step_y, step_dir))
+                visited.add((step_x, step_y))
+                current_x, current_y = step_x, step_y
+                current_dir = step_dir
 
-        return None
-
-    def find_nearest_unvisited(self):
-        x, y = self.current_pos
+    def find_nearest_unvisited(self, x, y, visited):
         queue = deque([(x, y, 0)])
-        seen = set([(x, y)])
-        candidates = []
+        seen = set()
+        distances = {}
 
         while queue:
-            cx, cy, distance = queue.popleft()
-            
-            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                nx, ny = cx + dx, cy + dy
-                if nx < 0 or nx >= self.cols or ny < 0 or ny >= self.rows:
-                    continue
-                wall_key = ((cx, cy), (nx, ny)) if (cx, cy) < (nx, ny) else ((nx, ny), (cx, cy))
-                if self.known_walls.get(wall_key, False):
-                    continue
-                if (nx, ny) in seen:
-                    continue
-                
-                visits = self.visited.get((nx, ny), 0)
-                max_visits = 4 - self.get_wall_count(nx, ny)
-                
-                if visits == 0 and visits < max_visits and (nx, ny) not in self.dead_ends:
-                    candidates.append((distance + 1, nx, ny))
-                seen.add((nx, ny))
-                queue.append((nx, ny, distance + 1))
-        
-        if not candidates:
-            return None
-        
-        min_distance = min(d for d, _, _ in candidates)
-        closest_candidates = [(d, nx, ny) for d, nx, ny in candidates if d == min_distance]
-        
-        sx, sy = self.start_pos
-        max_start_distance = -1
-        best_candidate = None
-        
-        for _, nx, ny in closest_candidates:
-            start_distance = abs(nx - sx) + abs(ny - sy)
-            if start_distance > max_start_distance:
-                max_start_distance = start_distance
-                best_candidate = (nx, ny)
-        
-        return best_candidate
-
-    def astar_path(self, target):
-        if not target:
-            return None
-        
-        x, y = self.current_pos
-        tx, ty = target
-        open_set = [(0, x, y, [])]
-        closed_set = set()
-        g_score = {(x, y): 0}
-        
-        while open_set:
-            open_set.sort()
-            f, cx, cy, path = open_set.pop(0)
-            
-            if (cx, cy) == (tx, ty):
-                return path
-            
-            if (cx, cy) in closed_set:
+            cx, cy, dist = queue.popleft()
+            if (cx, cy) in seen:
                 continue
-            
-            closed_set.add((cx, cy))
-            
+            seen.add((cx, cy))
+            distances[(cx, cy)] = dist
+
+            if (cx, cy) in self.scanned_cells and (cx, cy) not in visited and self.can_visit(cx, cy):
+                return (cx, cy)
+
             for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                 nx, ny = cx + dx, cy + dy
-                if nx < 0 or nx >= self.cols or ny < 0 or ny >= self.rows:
-                    continue
-                wall_key = ((cx, cy), (nx, ny)) if (cx, cy) < (nx, ny) else ((nx, ny), (cx, cy))
-                if self.known_walls.get(wall_key, False):
-                    continue
-                if (nx, ny) in closed_set:
-                    continue
-                
-                new_g = g_score[(cx, cy)] + 1
-                h = abs(nx - tx) + abs(ny - ty)
-                f = new_g + h
-                
-                if (nx, ny) not in g_score or new_g < g_score[(nx, ny)]:
-                    g_score[(nx, ny)] = new_g
-                    open_set.append((f, nx, ny, path + [(nx, ny)]))
-        
+                if 0 <= nx < self.cols and 0 <= ny < self.rows:
+                    wall_key = ((cx, cy), (nx, ny)) if (cx, cy) < (nx, ny) else ((nx, ny), (cx, cy))
+                    if not self.known_walls.get(wall_key, False) and (nx, ny) not in seen:
+                        queue.append((nx, ny, dist + 1))
+
         return None
 
-    def all_cells_visited(self):
-        for y in range(self.rows):
-            for x in range(self.cols):
-                if (x, y) not in self.visited or self.visited[(x, y)] == 0:
-                    return False
-        return True
+    def a_star(self, start, target, visited):
+        start_x, start_y = start
+        target_x, target_y = target
+
+        def heuristic(x1, y1):
+            return abs(x1 - target_x) + abs(y1 - target_y)
+
+        heap = []
+        heapq.heappush(heap, (0 + heuristic(start_x, start_y), 0, start_x, start_y, []))
+        seen = set()
+
+        while heap:
+            _, cost, x, y, path = heapq.heappop(heap)
+
+            if (x, y) == (target_x, target_y):
+                return path + [(x, y)]
+
+            if (x, y) in seen:
+                continue
+            seen.add((x, y))
+
+            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < self.cols and 0 <= ny < self.rows and self.can_visit(nx, ny):
+                    wall_key = ((x, y), (nx, ny)) if (x, y) < (nx, ny) else ((nx, ny), (x, y))
+                    if not self.known_walls.get(wall_key, False):
+                        heapq.heappush(
+                            heap,
+                            (cost + 1 + heuristic(nx, ny), cost + 1, nx, ny, path + [(nx, ny)])
+                        )
+        return None
 
     def get_required_turns(self, current_dir, target_dir):
         turns = []
         current_idx = self.directions.index(current_dir)
         target_idx = self.directions.index(target_dir)
-        
-        if (target_idx - current_idx) % 4 == 1:
+        diff = (target_idx - current_idx) % 4
+
+        if diff == 1:
             turns.append(self.directions[(current_idx + 1) % 4])
-        elif (target_idx - current_idx) % 4 == 3:
-            turns.append(self.directions[(current_idx - 1) % 4])
-        elif abs(target_idx - current_idx) == 2:
+        elif diff == 2:
             turns.append(self.directions[(current_idx + 1) % 4])
             turns.append(self.directions[(current_idx + 2) % 4])
-        
+        elif diff == 3:
+            turns.append(self.directions[(current_idx - 1) % 4])
+
         return turns
+
+    def get_next_step(self):
+        if not self.scanned_cells:
+            return None
+
+        if self.pending_turns:
+            turn = self.pending_turns.pop(0)
+            self.current_dir = turn
+            return (self.current_pos[0], self.current_pos[1], self.current_dir)
+
+        if self.path_index >= len(self.path) or not self.path:
+            self.initialize_path()
+            self.path_index = 0
+            if not self.path:
+                return None
+
+        x, y, direction = self.path[self.path_index]
+        self.path_index += 1
+
+        wall_key = ((self.current_pos[0], self.current_pos[1]), (x, y)) if (self.current_pos[0], self.current_pos[1]) < (x, y) else ((x, y), (self.current_pos[0], self.current_pos[1]))
+        if self.walls.get(wall_key, False):
+            self.initialize_path()
+            self.path_index = 0
+            return self.get_next_step()
+
+        if direction != self.current_dir:
+            self.pending_turns = self.get_required_turns(self.current_dir, direction)
+            if self.pending_turns:
+                turn = self.pending_turns.pop(0)
+                self.current_dir = turn
+                self.path_index -= 1
+                return (self.current_pos[0], self.current_pos[1], self.current_dir)
+
+        if (x, y) != self.current_pos:
+            self.current_pos = (x, y)
+            self.visited[(x, y)] = self.visited.get((x, y), 0) + 1
+            self.scanned_cells.discard((x, y))
+            self.scan_environment((x, y))
+        return (x, y, direction)
