@@ -507,7 +507,7 @@ class RobotTraversal:
         self.auto_traverse_step()
 
     def auto_traverse_step(self):
-        if not self.scanned_cells:
+        if not self.scanned_cells and not self.traversal_path[self.current_step:]:
             self.in_auto_mode = False
             messagebox.showinfo("Завершено", "Путешествие завершено.")
             return
@@ -520,7 +520,7 @@ class RobotTraversal:
             solver.scanned_cells = self.scanned_cells.copy()
             path = []
             step = solver.get_next_step()
-            while step and solver.scanned_cells:
+            while step:
                 path.append(step)
                 step = solver.get_next_step()
             self.traversal_path = path
