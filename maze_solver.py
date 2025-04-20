@@ -125,9 +125,12 @@ class MazeSolver:
                 if 0 <= nx < self.cols and 0 <= ny < self.rows:
                     wall_key = ((x, y), (nx, ny)) if (x, y) < (nx, ny) else ((nx, ny), (x, y))
                     if not self.known_walls.get(wall_key, False):
+                        visit_count = self.visited.get((nx, ny), 0)
+                        visit_penalty = visit_count * 2  # Штраф за количество посещений
+                        new_cost = cost + 1 + visit_penalty
                         heapq.heappush(
                             heap,
-                            (cost + 1 + heuristic(nx, ny), cost + 1, nx, ny, path + [(nx, ny)])
+                            (new_cost + heuristic(nx, ny), new_cost, nx, ny, path + [(nx, ny)])
                         )
         return None
 

@@ -583,17 +583,20 @@ class RobotTraversal:
             filetypes=[("JSON files", "*.json")]
         )
         if filename:
+            walls_list = [[list(k[0]), list(k[1]), v] for k, v in self.walls.items()]
+            visited_list = [[list(k), v] for k, v in self.visited.items()]
             data = {
                 "rows": self.rows,
                 "cols": self.cols,
-                "walls": [list(pair) for pair in self.walls.items()],
-                "robot_pos": self.robot_pos,
-                "start_pos": self.start_pos,
+                "walls": walls_list,
+                "robot_pos": list(self.robot_pos),
+                "start_pos": list(self.start_pos),
                 "robot_dir": self.robot_dir,
-                "visited": list(self.visited.items()),
+                "visited": visited_list,
                 "steps": self.steps_count,
                 "turns": self.turns_count,
-                "density": self.density
+                "density": self.density,
+                "has_maze": self.has_maze
             }
             with open(filename, "w") as f:
                 json.dump(data, f)
@@ -607,14 +610,23 @@ class RobotTraversal:
                 data = json.load(f)
                 self.rows = data["rows"]
                 self.cols = data["cols"]
-                self.walls = {tuple(tuple(p) for p in k): v for k, v in data["walls"]}
+                self.walls = {}
+                for wall in data["walls"]:
+                    key = (tuple(wall[0]), tuple(wall[1]))
+                    value = wall[2]
+                    self.walls[key] = value
                 self.robot_pos = tuple(data["robot_pos"])
                 self.start_pos = tuple(data["start_pos"])
                 self.robot_dir = data["robot_dir"]
-                self.visited = dict(tuple(item) for item in data.get("visited", []))
+                self.visited = {}
+                for pos in data.get("visited", []):
+                    key = tuple(pos[0])
+                    value = pos[1]
+                    self.visited[key] = value
                 self.steps_count = data.get("steps", 0)
                 self.turns_count = data.get("turns", 0)
                 self.density = data.get("density", self.default_density)
+                self.has_maze = data.get("has_maze", False)
                 
                 self.rows_entry.delete(0, tk.END)
                 self.rows_entry.insert(0, str(self.rows))
@@ -623,7 +635,14 @@ class RobotTraversal:
                 self.density_entry.delete(0, tk.END)
                 self.density_entry.insert(0, str(self.density))
                 
-                self.has_maze = True
+                if self.auto_traverse_id:
+                    self.root.after_cancel(self.auto_traverse_id)
+                    self.auto_traverse_id = None
+                self.traversal_path = []
+                self.current_step = 0
+                self.is_paused = False
+                self.in_auto_mode = False
+                
                 self.update_status()
                 self.scan_environment()
                 self.draw_field()
