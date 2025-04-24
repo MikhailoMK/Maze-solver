@@ -1,4 +1,3 @@
-from collections import deque
 import heapq
 
 class MazeSolver:
@@ -78,16 +77,17 @@ class MazeSolver:
                 current_x, current_y = step_x, step_y
 
     def find_nearest_unvisited(self, x, y, visited):
-        queue = deque([(x, y)])
+        heap = []
+        heapq.heappush(heap, (0, x, y, []))
         seen = set()
 
-        while queue:
-            cx, cy = queue.popleft()
+        while heap:
+            cost, cx, cy, path = heapq.heappop(heap)
             if (cx, cy) in seen:
                 continue
             seen.add((cx, cy))
 
-            if (cx, cy) not in visited:
+            if (cx, cy) not in visited and (cx, cy) in self.scanned_cells:
                 return (cx, cy)
 
             for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
@@ -95,7 +95,10 @@ class MazeSolver:
                 if 0 <= nx < self.cols and 0 <= ny < self.rows:
                     wall_key = ((cx, cy), (nx, ny)) if (cx, cy) < (nx, ny) else ((nx, ny), (cx, cy))
                     if not self.known_walls.get(wall_key, False) and (nx, ny) not in seen:
-                        queue.append((nx, ny))
+                        visit_count = self.visited.get((nx, ny), 0)
+                        visit_penalty = visit_count * 2
+                        new_cost = cost + 1 + visit_penalty
+                        heapq.heappush(heap, (new_cost, nx, ny, path + [(nx, ny)]))
 
         return None
 
@@ -126,7 +129,7 @@ class MazeSolver:
                     wall_key = ((x, y), (nx, ny)) if (x, y) < (nx, ny) else ((nx, ny), (x, y))
                     if not self.known_walls.get(wall_key, False):
                         visit_count = self.visited.get((nx, ny), 0)
-                        visit_penalty = visit_count * 2  # Штраф за количество посещений
+                        visit_penalty = visit_count * 2
                         new_cost = cost + 1 + visit_penalty
                         heapq.heappush(
                             heap,

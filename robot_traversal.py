@@ -8,8 +8,8 @@ class RobotTraversal:
     def __init__(self, root):
         self.root = root
         self.root.title("Robot Traversal")
-        self.default_rows = 20
-        self.default_cols = 20
+        self.default_rows = 10
+        self.default_cols = 10
         self.default_density = 100
         self.rows = self.default_rows
         self.cols = self.default_cols
@@ -25,6 +25,7 @@ class RobotTraversal:
         self.current_step = 0
         self.steps_count = 0
         self.turns_count = 0
+        self.area_count = 1
         self.is_paused = False
         self.auto_traverse_id = None
         self.in_auto_mode = False
@@ -54,9 +55,9 @@ class RobotTraversal:
             ("Сброс", self.reset_field),
             ("Сохранить", self.save_maze),
             ("Загрузить", self.load_maze),
+            ("Шаг", self.manual_move),
             ("Влево", lambda: self.turn_robot("LEFT")),
             ("Вправо", lambda: self.turn_robot("RIGHT")),
-            ("Шаг", self.manual_move),
             ("Авто", self.toggle_auto_traverse),
             ("Пауза", self.toggle_pause_resume),
             ("Быстрее", self.speed_up),
@@ -73,12 +74,12 @@ class RobotTraversal:
         self.settings_panel = tk.Frame(self.right_frame)
         self.settings_panel.pack(fill=tk.X, padx=5, pady=5)
 
-        tk.Label(self.settings_panel, text="Верт:").grid(row=0, column=0, sticky=tk.W)
+        tk.Label(self.settings_panel, text="Вертикаль:").grid(row=0, column=0, sticky=tk.W)
         self.rows_entry = tk.Entry(self.settings_panel, width=5)
         self.rows_entry.grid(row=0, column=1, sticky=tk.W)
         self.rows_entry.insert(0, str(self.default_rows))
 
-        tk.Label(self.settings_panel, text="Гор:").grid(row=1, column=0, sticky=tk.W)
+        tk.Label(self.settings_panel, text="Горизонталь:").grid(row=1, column=0, sticky=tk.W)
         self.cols_entry = tk.Entry(self.settings_panel, width=5)
         self.cols_entry.grid(row=1, column=1, sticky=tk.W)
         self.cols_entry.insert(0, str(self.default_cols))
@@ -98,18 +99,26 @@ class RobotTraversal:
         self.status_row1.pack(fill=tk.X)
         self.steps_label = tk.Label(self.status_row1, text="Шаги: 0")
         self.steps_label.pack(side=tk.LEFT, padx=5)
-        self.turns_label = tk.Label(self.status_row1, text="Повороты: 0")
-        self.turns_label.pack(side=tk.LEFT, padx=5)
 
         self.status_row2 = tk.Frame(self.status_panel)
         self.status_row2.pack(fill=tk.X)
-        self.speed_label = tk.Label(self.status_row2, text=f"Скорость: {self.speed}")
-        self.speed_label.pack(side=tk.LEFT, padx=5)
+        self.turns_label = tk.Label(self.status_row2, text="Повороты: 0")
+        self.turns_label.pack(side=tk.LEFT, padx=5)
 
         self.status_row3 = tk.Frame(self.status_panel)
         self.status_row3.pack(fill=tk.X)
-        self.paths_label = tk.Label(self.status_row3, text="Пути: 0")
+        self.speed_label = tk.Label(self.status_row3, text=f"Скорость: {self.speed}")
+        self.speed_label.pack(side=tk.LEFT, padx=5)
+
+        self.status_row4 = tk.Frame(self.status_panel)
+        self.status_row4.pack(fill=tk.X)
+        self.paths_label = tk.Label(self.status_row4, text="Пути: 0")
         self.paths_label.pack(side=tk.LEFT, padx=5)
+
+        self.status_row5 = tk.Frame(self.status_panel)
+        self.status_row5.pack(fill=tk.X)
+        self.area_label = tk.Label(self.status_row5, text="Площадь: 1")
+        self.area_label.pack(side=tk.LEFT, padx=5)
 
         self.canvas = tk.Canvas(self.left_frame, bg="white")
         self.canvas.pack(fill=tk.BOTH, expand=True)
@@ -118,15 +127,18 @@ class RobotTraversal:
         self.canvas.bind("<Configure>", self.on_canvas_resize)
 
     def on_canvas_resize(self, event):
-        canvas_width = event.width
-        canvas_height = event.height
+        self.update_cell_size()
+        self.draw_field()
+
+    def update_cell_size(self):
+        canvas_width = self.canvas.winfo_width()
+        canvas_height = self.canvas.winfo_height()
         if canvas_width > 10 and canvas_height > 10:
             self.cell_size = min(
                 (canvas_width - 40) // max(1, self.cols),
                 (canvas_height - 40) // max(1, self.rows)
             )
             self.cell_size = max(5, self.cell_size)
-            self.draw_field()
 
     def apply_settings(self):
         try:
@@ -218,16 +230,19 @@ class RobotTraversal:
             if (new_rx, new_ry) not in new_visited:
                 new_visited[(new_rx, new_ry)] = 1
             self.visited = new_visited
+            self.area_count = len(self.visited)
 
             self.steps_count = 0
             self.turns_count = 0
             self.has_maze = False
+            
+            self.update_cell_size()
             self.update_status()
             self.scan_environment()
             self.draw_field()
             
         except ValueError:
-            messagebox.showerror("Ошибка", "Пожалуйста, введите корректные значения\n(Верт. и Гор. - целые > 0, Плотность 0-100)")
+            messagebox.showerror("Ошибка", "Пожалуйста, введите корректные значения\n(Вертикаль и Горизонталь - целые > 0, Плотность 0-100)")
             self.rows_entry.delete(0, tk.END)
             self.rows_entry.insert(0, str(self.rows))
             self.cols_entry.delete(0, tk.END)
@@ -351,6 +366,7 @@ class RobotTraversal:
         self.turns_label.config(text=f"Повороты: {self.turns_count}")
         self.speed_label.config(text=f"Скорость: {self.speed}")
         self.paths_label.config(text=f"Пути: {len(self.scanned_cells)}")
+        self.area_label.config(text=f"Площадь: {self.area_count}")
 
     def generate_maze(self):
         self.clear_field()
@@ -369,22 +385,33 @@ class RobotTraversal:
         self.draw_field()
 
     def clear_field(self):
-        self.walls = {}
         self.visited = {self.robot_pos: 1}
         self.scanned_cells = set()
         self.steps_count = 0
         self.turns_count = 0
-        self.has_maze = False
+        self.area_count = 1
+        if self.auto_traverse_id:
+            self.root.after_cancel(self.auto_traverse_id)
+            self.auto_traverse_id = None
+        self.traversal_path = []
+        self.current_step = 0
+        self.is_paused = False
+        self.in_auto_mode = False
         self.update_status()
         self.scan_environment()
         self.draw_field()
 
     def reset_field(self):
-        self.clear_field()
+        self.walls = {}
         self.robot_pos = (self.cols // 2, self.rows // 2)
         self.start_pos = self.robot_pos
         self.robot_dir = 'NORTH'
         self.visited = {self.robot_pos: 1}
+        self.scanned_cells = set()
+        self.steps_count = 0
+        self.turns_count = 0
+        self.area_count = 1
+        self.has_maze = False
         if self.auto_traverse_id:
             self.root.after_cancel(self.auto_traverse_id)
             self.auto_traverse_id = None
@@ -425,8 +452,10 @@ class RobotTraversal:
         if 0 <= x < self.cols and 0 <= y < self.rows:
             path = self.find_path(self.robot_pos, (x, y))
             if path:
+                self.visited = {(x, y): 1}
                 self.robot_pos = (x, y)
-                self.visited[(x, y)] = self.visited.get((x, y), 0) + 1
+                self.area_count = 1
+                self.scanned_cells.clear()
                 self.scan_environment()
                 self.draw_field()
             else:
@@ -462,6 +491,9 @@ class RobotTraversal:
         }
         self.robot_dir = directions[self.robot_dir][direction]
         self.turns_count += 1
+        if self.in_auto_mode:
+            self.traversal_path = []
+            self.current_step = 0
         self.update_status()
         self.scan_environment()
         self.draw_field()
@@ -482,8 +514,13 @@ class RobotTraversal:
         if (0 <= new_x < self.cols and 0 <= new_y < self.rows and 
             not self.walls.get(wall_key, False)):
             self.robot_pos = (new_x, new_y)
+            if (new_x, new_y) not in self.visited:
+                self.area_count += 1
             self.visited[(new_x, new_y)] = self.visited.get((new_x, new_y), 0) + 1
             self.steps_count += 1
+            if self.in_auto_mode:
+                self.traversal_path = []
+                self.current_step = 0
             self.scan_environment()
         else:
             messagebox.showinfo("Препятствие", "Невозможно двигаться вперёд. Обнаружена стена.")
@@ -492,7 +529,7 @@ class RobotTraversal:
         self.draw_field()
 
     def toggle_auto_traverse(self):
-        if not self.traversal_path:
+        if not self.in_auto_mode:
             self.start_auto_traverse()
         elif self.is_paused:
             self.resume_auto_traverse()
@@ -543,6 +580,8 @@ class RobotTraversal:
         
         if (x, y) != self.robot_pos:
             self.robot_pos = (x, y)
+            if (x, y) not in self.visited:
+                self.area_count += 1
             self.visited[(x, y)] = self.visited.get((x, y), 0) + 1
             self.steps_count += 1
             self.scan_environment()
@@ -565,12 +604,14 @@ class RobotTraversal:
             self.auto_traverse_id = None
 
     def resume_auto_traverse(self):
-        if self.is_paused and self.traversal_path:
+        if self.is_paused:
             self.is_paused = False
+            self.traversal_path = []
+            self.current_step = 0
             self.auto_traverse_step()
 
     def speed_up(self):
-        self.speed = max(50, self.speed - 50)
+        self.speed = max(1, self.speed - 50)
         self.speed_label.config(text=f"Скорость: {self.speed}")
 
     def slow_down(self):
@@ -595,6 +636,7 @@ class RobotTraversal:
                 "visited": visited_list,
                 "steps": self.steps_count,
                 "turns": self.turns_count,
+                "area": self.area_count,
                 "density": self.density,
                 "has_maze": self.has_maze
             }
@@ -625,6 +667,7 @@ class RobotTraversal:
                     self.visited[key] = value
                 self.steps_count = data.get("steps", 0)
                 self.turns_count = data.get("turns", 0)
+                self.area_count = data.get("area", len(self.visited))
                 self.density = data.get("density", self.default_density)
                 self.has_maze = data.get("has_maze", False)
                 
@@ -643,6 +686,7 @@ class RobotTraversal:
                 self.is_paused = False
                 self.in_auto_mode = False
                 
+                self.update_cell_size()
                 self.update_status()
                 self.scan_environment()
                 self.draw_field()
