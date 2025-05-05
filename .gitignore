@@ -1,5 +1,7 @@
 /__pycache__/
+/Maze/
 *.pptx
 *.docx
 *.xlsx
 *.txt
+*.zip

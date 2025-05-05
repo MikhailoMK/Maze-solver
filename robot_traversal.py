@@ -3,6 +3,7 @@ from tkinter import messagebox, filedialog
 import json
 from maze_solver import MazeSolver
 from maze_generator import MazeGenerator
+from collections import Counter
 
 class RobotTraversal:
     def __init__(self, root):
@@ -20,7 +21,7 @@ class RobotTraversal:
         self.robot_dir = 'NORTH'
         self.visited = {}
         self.scanned_cells = set()
-        self.speed = 150
+        self.speed = 1
         self.traversal_path = []
         self.current_step = 0
         self.steps_count = 0
@@ -33,22 +34,22 @@ class RobotTraversal:
         self.has_maze = False
         self.offset_x = 0
         self.offset_y = 0
+        self.cell_items = {}
+        self.text_items = {}
+        self.wall_items = {}
+        self.grid_lines = []
         self.create_widgets()
         self.initialize_game()
 
     def create_widgets(self):
         self.main_frame = tk.Frame(self.root)
         self.main_frame.pack(fill=tk.BOTH, expand=True)
-
         self.left_frame = tk.Frame(self.main_frame)
         self.left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
         self.right_frame = tk.Frame(self.main_frame, width=150)
         self.right_frame.pack(side=tk.RIGHT, fill=tk.Y)
-
         self.button_panel = tk.Frame(self.right_frame)
         self.button_panel.pack(fill=tk.X, padx=5, pady=5)
-
         buttons = [
             ("Лабиринт", self.generate_maze),
             ("Очистить", self.clear_field),
@@ -59,67 +60,53 @@ class RobotTraversal:
             ("Влево", lambda: self.turn_robot("LEFT")),
             ("Вправо", lambda: self.turn_robot("RIGHT")),
             ("Авто", self.toggle_auto_traverse),
-            ("Пауза", self.toggle_pause_resume),
+            ("Пауза", self.toggle_auto_traverse),
             ("Быстрее", self.speed_up),
             ("Медленнее", self.slow_down),
         ]
-
         for i, (text, command) in enumerate(buttons):
             btn = tk.Button(self.button_panel, text=text, command=command, width=8)
             btn.grid(row=i//2, column=i%2, padx=2, pady=2, sticky="ew")
-
         self.button_panel.grid_columnconfigure(0, weight=1)
         self.button_panel.grid_columnconfigure(1, weight=1)
-
         self.settings_panel = tk.Frame(self.right_frame)
         self.settings_panel.pack(fill=tk.X, padx=5, pady=5)
-
         tk.Label(self.settings_panel, text="Вертикаль:").grid(row=0, column=0, sticky=tk.W)
         self.rows_entry = tk.Entry(self.settings_panel, width=5)
         self.rows_entry.grid(row=0, column=1, sticky=tk.W)
         self.rows_entry.insert(0, str(self.default_rows))
-
         tk.Label(self.settings_panel, text="Горизонталь:").grid(row=1, column=0, sticky=tk.W)
         self.cols_entry = tk.Entry(self.settings_panel, width=5)
         self.cols_entry.grid(row=1, column=1, sticky=tk.W)
         self.cols_entry.insert(0, str(self.default_cols))
-
         tk.Label(self.settings_panel, text="Плотность (%):").grid(row=2, column=0, sticky=tk.W)
         self.density_entry = tk.Entry(self.settings_panel, width=5)
         self.density_entry.grid(row=2, column=1, sticky=tk.W)
         self.density_entry.insert(0, str(self.default_density))
-
         self.apply_btn = tk.Button(self.settings_panel, text="Применить", command=self.apply_settings)
         self.apply_btn.grid(row=3, column=0, columnspan=2, pady=5)
-
         self.status_panel = tk.Frame(self.right_frame)
         self.status_panel.pack(fill=tk.X, padx=5, pady=5)
-
         self.status_row1 = tk.Frame(self.status_panel)
         self.status_row1.pack(fill=tk.X)
         self.steps_label = tk.Label(self.status_row1, text="Шаги: 0")
         self.steps_label.pack(side=tk.LEFT, padx=5)
-
         self.status_row2 = tk.Frame(self.status_panel)
         self.status_row2.pack(fill=tk.X)
         self.turns_label = tk.Label(self.status_row2, text="Повороты: 0")
         self.turns_label.pack(side=tk.LEFT, padx=5)
-
         self.status_row3 = tk.Frame(self.status_panel)
         self.status_row3.pack(fill=tk.X)
         self.speed_label = tk.Label(self.status_row3, text=f"Скорость: {self.speed}")
         self.speed_label.pack(side=tk.LEFT, padx=5)
-
         self.status_row4 = tk.Frame(self.status_panel)
         self.status_row4.pack(fill=tk.X)
         self.paths_label = tk.Label(self.status_row4, text="Пути: 0")
         self.paths_label.pack(side=tk.LEFT, padx=5)
-
         self.status_row5 = tk.Frame(self.status_panel)
         self.status_row5.pack(fill=tk.X)
         self.area_label = tk.Label(self.status_row5, text="Площадь: 1")
         self.area_label.pack(side=tk.LEFT, padx=5)
-
         self.canvas = tk.Canvas(self.left_frame, bg="white")
         self.canvas.pack(fill=tk.BOTH, expand=True)
         self.canvas.bind("<Button-1>", self.toggle_wall)
@@ -145,25 +132,20 @@ class RobotTraversal:
             new_rows = int(self.rows_entry.get())
             new_cols = int(self.cols_entry.get())
             new_density = int(self.density_entry.get())
-            
             if new_rows < 1 or new_cols < 1 or new_density < 0 or new_density > 100:
                 raise ValueError
-            
             old_rows = self.rows
             old_cols = self.cols
             self.rows = new_rows
             self.cols = new_cols
             self.density = new_density
-            
             rx, ry = self.robot_pos
             left_cols = rx
             right_cols = old_cols - rx - 1
             top_rows = ry
             bottom_rows = old_rows - ry - 1
-            
             col_diff = new_cols - old_cols
             row_diff = new_rows - old_rows
-            
             if col_diff % 2 == 0:
                 col_shift_left = col_shift_right = col_diff // 2
             else:
@@ -181,7 +163,6 @@ class RobotTraversal:
                     else:
                         col_shift_right = col_diff // 2
                         col_shift_left = col_diff - col_shift_right
-            
             if row_diff % 2 == 0:
                 row_shift_top = row_shift_bottom = row_diff // 2
             else:
@@ -199,7 +180,6 @@ class RobotTraversal:
                     else:
                         row_shift_bottom = row_diff // 2
                         row_shift_top = row_shift_bottom
-            
             new_rx = rx + col_shift_left
             new_ry = ry + row_shift_top
             if new_rx < 0 or new_rx >= self.cols or new_ry < 0 or new_ry >= self.rows:
@@ -207,7 +187,6 @@ class RobotTraversal:
                 new_ry = self.rows // 2
             self.robot_pos = (new_rx, new_ry)
             self.start_pos = self.robot_pos
-            
             new_walls = {}
             for wall, state in self.walls.items():
                 (x1, y1), (x2, y2) = wall
@@ -219,7 +198,6 @@ class RobotTraversal:
                     0 <= new_x2 < self.cols and 0 <= new_y2 < self.rows):
                     new_walls[((new_x1, new_y1), (new_x2, new_y2))] = state
             self.walls = new_walls
-            
             new_visited = {}
             for pos, count in self.visited.items():
                 x, y = pos
@@ -231,16 +209,13 @@ class RobotTraversal:
                 new_visited[(new_rx, new_ry)] = 1
             self.visited = new_visited
             self.area_count = len(self.visited)
-
             self.steps_count = 0
             self.turns_count = 0
             self.has_maze = False
-            
             self.update_cell_size()
             self.update_status()
             self.scan_environment()
             self.draw_field()
-            
         except ValueError:
             messagebox.showerror("Ошибка", "Пожалуйста, введите корректные значения\n(Вертикаль и Горизонталь - целые > 0, Плотность 0-100)")
             self.rows_entry.delete(0, tk.END)
@@ -257,70 +232,105 @@ class RobotTraversal:
 
     def draw_field(self):
         self.canvas.delete("all")
-        
+        self.cell_items.clear()
+        self.text_items.clear()
+        self.wall_items.clear()
+        self.grid_lines.clear()
         field_width = self.cols * self.cell_size
         field_height = self.rows * self.cell_size
         canvas_width = self.canvas.winfo_width()
         canvas_height = self.canvas.winfo_height()
         self.offset_x = (canvas_width - field_width) // 2 if canvas_width > field_width else 0
         self.offset_y = (canvas_height - field_height) // 2 if canvas_height > field_height else 0
-        
+        for y in range(self.rows + 1):
+            line = self.canvas.create_line(
+                self.offset_x, self.offset_y + y * self.cell_size,
+                self.offset_x + self.cols * self.cell_size, self.offset_y + y * self.cell_size,
+                fill="gray"
+            )
+            self.grid_lines.append(line)
+        for x in range(self.cols + 1):
+            line = self.canvas.create_line(
+                self.offset_x + x * self.cell_size, self.offset_y,
+                self.offset_x + x * self.cell_size, self.offset_y + self.rows * self.cell_size,
+                fill="gray"
+            )
+            self.grid_lines.append(line)
         for y in range(self.rows):
             for x in range(self.cols):
-                visit_count = self.visited.get((x, y), 0)
-                
-                if (x, y) == self.robot_pos:
-                    base_color = "blue"
-                elif (x, y) in self.scanned_cells and visit_count == 0:
-                    base_color = "yellow"
-                elif visit_count > 0:
-                    base_color = "#00FF00" if visit_count == 1 else \
-                                "#FFA500" if visit_count == 2 else \
-                                "#800080" if visit_count == 3 else \
-                                "#FF0000" if visit_count >= 4 else "#FFFFFF"
-                else:
-                    base_color = "white"
-                    
-                self.canvas.create_rectangle(
-                    self.offset_x + x * self.cell_size, self.offset_y + y * self.cell_size,
-                    self.offset_x + (x + 1) * self.cell_size, self.offset_y + (y + 1) * self.cell_size,
-                    fill=base_color, outline="gray"
-                )
-                
-                if visit_count > 0 and (x, y) != self.robot_pos:
-                    self.canvas.create_text(
-                        self.offset_x + x * self.cell_size + self.cell_size//2,
-                        self.offset_y + y * self.cell_size + self.cell_size//2,
-                        text=str(visit_count),
-                        fill="black" if visit_count <= 2 else "white"
-                    )
-        
+                self.update_cell(x, y, force_create=True)
         for (x1, y1), (x2, y2) in self.walls:
             if self.walls[((x1, y1), (x2, y2))]:
                 if x1 == x2 and 0 <= y1 < self.rows and 0 <= y2 <= self.rows:
                     y = max(y1, y2)
-                    self.canvas.create_line(
+                    wall_id = self.canvas.create_line(
                         self.offset_x + x1 * self.cell_size, self.offset_y + y * self.cell_size,
                         self.offset_x + (x1 + 1) * self.cell_size, self.offset_y + y * self.cell_size,
                         width=3, fill="black"
                     )
+                    self.wall_items[((x1, y1), (x2, y2))] = wall_id
                 elif y1 == y2 and 0 <= x1 < self.cols and 0 <= x2 <= self.cols:
                     x = max(x1, x2)
-                    self.canvas.create_line(
+                    wall_id = self.canvas.create_line(
                         self.offset_x + x * self.cell_size, self.offset_y + y1 * self.cell_size,
                         self.offset_x + x * self.cell_size, self.offset_y + (y1 + 1) * self.cell_size,
                         width=3, fill="black"
                     )
-        
+                    self.wall_items[((x1, y1), (x2, y2))] = wall_id
+        self.canvas.create_rectangle(
+            self.offset_x, self.offset_y,
+            self.offset_x + self.cols * self.cell_size, self.offset_y + self.rows * self.cell_size,
+            outline="black", width=3
+        )
         self.draw_robot()
-        self.update_status()
+
+    def update_cell(self, x, y, force_create=False):
+        visit_count = self.visited.get((x, y), 0)
+        if (x, y) == self.robot_pos:
+            base_color = "blue"
+        elif (x, y) in self.scanned_cells and visit_count == 0:
+            base_color = "yellow"
+        elif visit_count > 0:
+            base_color = "#00FF00" if visit_count == 1 else \
+                        "#FFA500" if visit_count == 2 else \
+                        "#800080" if visit_count == 3 else \
+                        "#FF0000" if visit_count >= 4 else "#FFFFFF"
+        else:
+            base_color = "white"
+        if force_create or (x, y) not in self.cell_items:
+            cell_id = self.canvas.create_rectangle(
+                self.offset_x + x * self.cell_size, self.offset_y + y * self.cell_size,
+                self.offset_x + (x + 1) * self.cell_size, self.offset_y + (y + 1) * self.cell_size,
+                fill=base_color, outline="gray"
+            )
+            self.cell_items[(x, y)] = cell_id
+        else:
+            self.canvas.itemconfig(self.cell_items[(x, y)], fill=base_color)
+        if visit_count > 0 and (x, y) != self.robot_pos:
+            if force_create or (x, y) not in self.text_items:
+                text_id = self.canvas.create_text(
+                    self.offset_x + x * self.cell_size + self.cell_size//2,
+                    self.offset_y + y * self.cell_size + self.cell_size//2,
+                    text=str(visit_count),
+                    fill="black" if visit_count <= 2 else "white"
+                )
+                self.text_items[(x, y)] = text_id
+            else:
+                self.canvas.itemconfig(
+                    self.text_items[(x, y)],
+                    text=str(visit_count),
+                    fill="black" if visit_count <= 2 else "white"
+                )
+        elif (x, y) in self.text_items:
+            self.canvas.delete(self.text_items[(x, y)])
+            del self.text_items[(x, y)]
 
     def draw_robot(self):
+        self.canvas.delete("robot")
         x, y = self.robot_pos
         size = self.cell_size
         half = size // 2
         quarter = size // 4
-        
         directions = {
             'NORTH': [
                 self.offset_x + x * size + half, self.offset_y + y * size + quarter,
@@ -343,11 +353,11 @@ class RobotTraversal:
                 self.offset_x + x * size + 3 * quarter, self.offset_y + y * size + 3 * quarter
             ]
         }
-        
         self.canvas.create_polygon(
             directions[self.robot_dir], 
             fill="white", 
-            outline="black"
+            outline="black",
+            tags="robot"
         )
 
     def scan_environment(self):
@@ -360,6 +370,8 @@ class RobotTraversal:
                     wall_key = ((x, y), (nx, ny)) if (x, y) < (nx, ny) else ((nx, ny), (x, y))
                     if not self.walls.get(wall_key, False):
                         self.scanned_cells.add((nx, ny))
+        for cell in self.scanned_cells:
+            self.update_cell(*cell)
 
     def update_status(self):
         self.steps_label.config(text=f"Шаги: {self.steps_count}")
@@ -374,9 +386,7 @@ class RobotTraversal:
             density = int(self.density_entry.get()) / 100
         except ValueError:
             density = self.density / 100
-        
         density = max(0, min(1, density))
-        
         generator = MazeGenerator(self.rows, self.cols, density)
         generator.generate_maze_kruskal()
         self.walls = generator.get_walls()
@@ -426,10 +436,8 @@ class RobotTraversal:
     def toggle_wall(self, event):
         x = int((event.x - self.offset_x) // self.cell_size)
         y = int((event.y - self.offset_y) // self.cell_size)
-        
         rel_x = ((event.x - self.offset_x) % self.cell_size) / self.cell_size
         rel_y = ((event.y - self.offset_y) % self.cell_size) / self.cell_size
-        
         if rel_x < 0.2 and x > 0:
             wall_key = ((x-1, y), (x, y))
         elif rel_x > 0.8 and x < self.cols - 1:
@@ -440,40 +448,61 @@ class RobotTraversal:
             wall_key = ((x, y), (x, y+1))
         else:
             return
-        
-        self.walls[wall_key] = not self.walls.get(wall_key, False)
+        state = not self.walls.get(wall_key, False)
+        self.walls[wall_key] = state
+        if wall_key in self.wall_items:
+            self.canvas.delete(self.wall_items[wall_key])
+            del self.wall_items[wall_key]
+        if state:
+            (x1, y1), (x2, y2) = wall_key
+            if x1 == x2:
+                y = max(y1, y2)
+                wall_id = self.canvas.create_line(
+                    self.offset_x + x1 * self.cell_size, self.offset_y + y * self.cell_size,
+                    self.offset_x + (x1 + 1) * self.cell_size, self.offset_y + y * self.cell_size,
+                    width=3, fill="black"
+                )
+                self.wall_items[wall_key] = wall_id
+            elif y1 == y2:
+                x = max(x1, x2)
+                wall_id = self.canvas.create_line(
+                    self.offset_x + x * self.cell_size, self.offset_y + y1 * self.cell_size,
+                    self.offset_x + x * self.cell_size, self.offset_y + (y1 + 1) * self.cell_size,
+                    width=3, fill="black"
+                )
+                self.wall_items[wall_key] = wall_id
         self.scan_environment()
-        self.draw_field()
+        self.update_status()
 
     def move_robot_to_cell(self, event):
         x = int((event.x - self.offset_x) // self.cell_size)
         y = int((event.y - self.offset_y) // self.cell_size)
-        
         if 0 <= x < self.cols and 0 <= y < self.rows:
             path = self.find_path(self.robot_pos, (x, y))
             if path:
+                prev_pos = self.robot_pos
                 self.visited = {(x, y): 1}
                 self.robot_pos = (x, y)
                 self.area_count = 1
                 self.scanned_cells.clear()
+                self.update_cell(*prev_pos)
+                self.update_cell(x, y)
                 self.scan_environment()
-                self.draw_field()
+                self.draw_robot()
+                self.update_status()
             else:
                 messagebox.showinfo("Ошибка", "Невозможно переместить робота - путь заблокирован стенами")
 
     def find_path(self, start, end):
         queue = [(start, [start])]
         visited = set()
-        
         while queue:
             (x, y), path = queue.pop(0)
             if (x, y) == end:
                 return path
-                
             if (x, y) in visited:
                 continue
             visited.add((x, y))
-            
             for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                 nx, ny = x + dx, y + dy
                 if 0 <= nx < self.cols and 0 <= ny < self.rows:
@@ -495,8 +524,7 @@ class RobotTraversal:
             self.traversal_path = []
             self.current_step = 0
         self.update_status()
-        self.scan_environment()
-        self.draw_field()
+        self.draw_robot()
 
     def manual_move(self):
         x, y = self.robot_pos
@@ -508,11 +536,10 @@ class RobotTraversal:
         }
         dx, dy = direction_offsets[self.robot_dir]
         new_x, new_y = x + dx, y + dy
-
         wall_key = ((x, y), (new_x, new_y)) if (x, y) < (new_x, new_y) else ((new_x, new_y), (x, y))
-        
         if (0 <= new_x < self.cols and 0 <= new_y < self.rows and 
             not self.walls.get(wall_key, False)):
+            prev_pos = self.robot_pos
             self.robot_pos = (new_x, new_y)
             if (new_x, new_y) not in self.visited:
                 self.area_count += 1
@@ -521,12 +548,13 @@ class RobotTraversal:
             if self.in_auto_mode:
                 self.traversal_path = []
                 self.current_step = 0
+            self.update_cell(*prev_pos)
+            self.update_cell(new_x, new_y)
             self.scan_environment()
+            self.draw_robot()
         else:
             messagebox.showinfo("Препятствие", "Невозможно двигаться вперёд. Обнаружена стена.")
-
         self.update_status()
-        self.draw_field()
 
     def toggle_auto_traverse(self):
         if not self.in_auto_mode:
@@ -546,12 +574,12 @@ class RobotTraversal:
     def auto_traverse_step(self):
         if not self.scanned_cells and not self.traversal_path[self.current_step:]:
             self.in_auto_mode = False
+            self.write_result()
+            self.update_status()
             messagebox.showinfo("Завершено", "Путешествие завершено.")
             return
-
         if self.is_paused:
             return
-
         if self.current_step >= len(self.traversal_path):
             solver = MazeSolver(self.walls, self.rows, self.cols, self.robot_pos, self.robot_dir, self.visited, self.start_pos)
             solver.scanned_cells = self.scanned_cells.copy()
@@ -564,38 +592,43 @@ class RobotTraversal:
             self.current_step = 0
             if not self.traversal_path:
                 self.in_auto_mode = False
+                self.write_result()
+                self.update_status()
                 messagebox.showinfo("Завершено", "Путешествие завершено.")
                 return
-
         x, y, direction = self.traversal_path[self.current_step]
-        
+        prev_pos = self.robot_pos
         if direction != self.robot_dir:
             self.robot_dir = direction
             self.turns_count += 1
             self.update_status()
-            self.draw_field()
+            self.draw_robot()
             self.current_step += 1
             self.auto_traverse_id = self.root.after(self.speed, self.auto_traverse_step)
             return
-        
         if (x, y) != self.robot_pos:
             self.robot_pos = (x, y)
             if (x, y) not in self.visited:
                 self.area_count += 1
             self.visited[(x, y)] = self.visited.get((x, y), 0) + 1
             self.steps_count += 1
+            self.update_cell(*prev_pos)
+            self.update_cell(x, y)
             self.scan_environment()
-        
         self.update_status()
-        self.draw_field()
+        self.draw_robot()
         self.current_step += 1
         self.auto_traverse_id = self.root.after(self.speed, self.auto_traverse_step)
 
-    def toggle_pause_resume(self):
-        if self.is_paused:
-            self.resume_auto_traverse()
-        else:
-            self.pause_auto_traverse()
+    def write_result(self):
+        visit_counts = Counter(self.visited.values())
+        total_visits = sum(visits * count for visits, count in visit_counts.items())
+        total_cells = len(self.visited)
+        avg_visits = total_visits / total_cells if total_cells > 0 else 0
+        with open("res.txt", "w", encoding="utf-8") as f:
+            for visits, count in sorted(visit_counts.items()):
+                f.write(f"{visits} - {count}\n")
+            f.write(f"Частота посещений: {avg_visits:.2f}\n")
 
     def pause_auto_traverse(self):
         if self.auto_traverse_id:
@@ -670,14 +703,12 @@ class RobotTraversal:
                 self.area_count = data.get("area", len(self.visited))
                 self.density = data.get("density", self.default_density)
                 self.has_maze = data.get("has_maze", False)
-                
                 self.rows_entry.delete(0, tk.END)
                 self.rows_entry.insert(0, str(self.rows))
                 self.cols_entry.delete(0, tk.END)
                 self.cols_entry.insert(0, str(self.cols))
                 self.density_entry.delete(0, tk.END)
                 self.density_entry.insert(0, str(self.density))
-                
                 if self.auto_traverse_id:
                     self.root.after_cancel(self.auto_traverse_id)
                     self.auto_traverse_id = None
@@ -685,7 +716,6 @@ class RobotTraversal:
                 self.current_step = 0
                 self.is_paused = False
                 self.in_auto_mode = False
-                
                 self.update_cell_size()
                 self.update_status()
                 self.scan_environment()

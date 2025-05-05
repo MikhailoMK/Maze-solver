@@ -21,7 +21,7 @@ class RobotTraversal:
         self.robot_dir = 'NORTH'
         self.visited = {}
         self.scanned_cells = set()
-        self.speed = 150
+        self.speed = 1
         self.traversal_path = []
         self.current_step = 0
         self.steps_count = 0
@@ -594,9 +594,13 @@ class RobotTraversal:
 
     def write_result(self):
         visit_counts = Counter(self.visited.values())
-        with open("result.txt", "w") as f:
+        total_visits = sum(visits * count for visits, count in visit_counts.items())
+        total_cells = len(self.visited)
+        avg_visits = total_visits / total_cells if total_cells > 0 else 0
+        with open("res.txt", "w", encoding="utf-8") as f:
             for visits, count in sorted(visit_counts.items()):
                 f.write(f"{visits} - {count}\n")
+            f.write(f"Частота посещений: {avg_visits:.2f}\n")
 
     def toggle_pause_resume(self):
         if self.is_paused:

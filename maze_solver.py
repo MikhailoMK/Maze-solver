@@ -1,4 +1,5 @@
 import heapq
+import random
 
 class MazeSolver:
     def __init__(self, walls, rows, cols, start_pos, start_dir, visited, start_pos_original):
@@ -46,13 +47,17 @@ class MazeSolver:
         current_x, current_y = self.current_pos
         current_dir = self.current_dir
 
-        target = self.find_nearest_unvisited(current_x, current_y, visited)
-        if not target:
-            return
-
-        move_path = self.a_star((current_x, current_y), target, visited)
-        if not move_path:
-            return
+        neighbors = self.get_unvisited_neighbors(current_x, current_y)
+        if neighbors:
+            target = random.choice(neighbors)
+            move_path = [target]
+        else:
+            targets = self.find_all_unvisited()
+            if not targets:
+                return
+            move_path = self.a_star_multi_target((current_x, current_y), targets, visited)
+            if not move_path:
+                return
 
         for step in move_path:
             step_x, step_y = step
@@ -76,47 +81,30 @@ class MazeSolver:
                 visited.add((step_x, step_y))
                 current_x, current_y = step_x, step_y
 
-    def find_nearest_unvisited(self, x, y, visited):
-        heap = []
-        heapq.heappush(heap, (0, x, y, []))
-        seen = set()
+    def get_unvisited_neighbors(self, x, y):
+        neighbors = []
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < self.cols and 0 <= ny < self.rows:
+                wall_key = ((x, y), (nx, ny)) if (x, y) < (nx, ny) else ((nx, ny), (x, y))
+                if not self.known_walls.get(wall_key, False) and (nx, ny) not in self.visited:
+                    neighbors.append((nx, ny))
+        return neighbors
 
-        while heap:
-            cost, cx, cy, path = heapq.heappop(heap)
-            if (cx, cy) in seen:
-                continue
-            seen.add((cx, cy))
+    def find_all_unvisited(self):
+        return list(self.scanned_cells)
 
-            if (cx, cy) not in visited and (cx, cy) in self.scanned_cells:
-                return (cx, cy)
-
-            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                nx, ny = cx + dx, cy + dy
-                if 0 <= nx < self.cols and 0 <= ny < self.rows:
-                    wall_key = ((cx, cy), (nx, ny)) if (cx, cy) < (nx, ny) else ((nx, ny), (cx, cy))
-                    if not self.known_walls.get(wall_key, False) and (nx, ny) not in seen:
-                        visit_count = self.visited.get((nx, ny), 0)
-                        visit_penalty = visit_count * 2
-                        new_cost = cost + 1 + visit_penalty
-                        heapq.heappush(heap, (new_cost, nx, ny, path + [(nx, ny)]))
-
-        return None
-
-    def a_star(self, start, target, visited):
+    def a_star_multi_target(self, start, targets, visited):
         start_x, start_y = start
-        target_x, target_y = target
-
-        def heuristic(x1, y1):
-            return abs(x1 - target_x) + abs(y1 - target_y)
-
         heap = []
-        heapq.heappush(heap, (0 + heuristic(start_x, start_y), 0, start_x, start_y, []))
+        heapq.heappush(heap, (0, 0, start_x, start_y, []))
         seen = set()
+        target_set = set(targets)
 
         while heap:
             _, cost, x, y, path = heapq.heappop(heap)
 
-            if (x, y) == (target_x, target_y):
+            if (x, y) in target_set:
                 return path + [(x, y)]
 
             if (x, y) in seen:
@@ -133,7 +121,7 @@ class MazeSolver:
                         new_cost = cost + 1 + visit_penalty
                         heapq.heappush(
                             heap,
-                            (new_cost + heuristic(nx, ny), new_cost, nx, ny, path + [(nx, ny)])
+                            (new_cost, new_cost, nx, ny, path + [(nx, ny)])
                         )
         return None
 
